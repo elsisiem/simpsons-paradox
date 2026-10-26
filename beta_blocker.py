@@ -1,108 +1,121 @@
-def simulate_beta_blockers():
-    import random
+"""Beta-blocker example: blood pressure is a mediator, not a confounder.
 
-    # 38% of patients are given the beta-blocker pill
-    p_pill = 0.38
+The pill raises blood pressure, and high blood pressure lowers the chance of
+improving. Within each blood pressure group the pill looks better. For all
+patients it looks worse. The pill is assigned independently of everything
+else, so the all-patient comparison is the total effect of taking it. The
+within-group comparison blocks the path through blood pressure, so it measures
+only the direct effect.
 
-    # 84% of patients who get the medication have high blood pressure after
-    p_high_if_pill = 0.84
+Usage: python beta_blocker.py [--seed 42] [--patients 10000]
+"""
+import argparse
+import random
 
-    # 13% of patients who don't get the medication have high blood pressure
-    p_high_if_no_pill = 0.13
+# 38% of patients are given the beta-blocker pill
+P_PILL = 0.38
 
-    # At baseline, 30% of patients improve
-    improve_rate = 0.3
+# 84% of patients who get the medication have high blood pressure after
+P_HIGH_IF_PILL = 0.84
 
-    # Absolute 20% fewer patients improve if their blood pressure is high
-    improve_rate_if_high = -0.2
+# 13% of patients who don't get the medication have high blood pressure
+P_HIGH_IF_NO_PILL = 0.13
 
-    # Absolute 20% more patients improve if their blood pressure is low
-    improve_rate_if_low = 0.2
+# At baseline, 30% of patients improve
+IMPROVE_RATE = 0.3
 
-    # Absolute 40% more patients improve with the medication
-    improve_rate_if_pill = 0.4
+# Absolute 20% fewer patients improve if their blood pressure is high
+IMPROVE_RATE_IF_HIGH = -0.2
 
-    # Absolute 20% more patients improve without the medication
-    improve_rate_if_no_pill = 0.2
+# Absolute 20% more patients improve if their blood pressure is low
+IMPROVE_RATE_IF_LOW = 0.2
 
-    # This is the baseline improvement probability. It will go up or down below.
-    p_improve = improve_rate
+# Absolute 40% more patients improve with the medication
+IMPROVE_RATE_IF_PILL = 0.4
 
-    # TASK: Simulate whether the patient gets the beta-blocker pill
-    if random.uniform(0, 1) < p_pill:
-        intervention = 'pill'
-        # TASK: Simulate whether the patient has high or low blood pressure
-        if random.uniform(0, 1) < p_high_if_pill:
-            blood_pressure = 'high'
-        else:
-            blood_pressure = 'low'
+# Absolute 20% more patients improve without the medication
+IMPROVE_RATE_IF_NO_PILL = 0.2
+
+
+def simulate_beta_blockers(rng):
+    """Simulates one patient. Returns (blood_pressure, treatment, improved)."""
+    # The pill is assigned at random. It then changes blood pressure.
+    if rng.random() < P_PILL:
+        treatment = 'pill'
+        p_high = P_HIGH_IF_PILL
     else:
-        intervention = 'no_pill'
-        # TASK: Simulate whether the patient has high or low blood pressure
-        if random.uniform(0, 1) < p_high_if_no_pill:
-            blood_pressure = 'high'
-        else:
-            blood_pressure = 'low'
+        treatment = 'no_pill'
+        p_high = P_HIGH_IF_NO_PILL
+    blood_pressure = 'high' if rng.random() < p_high else 'low'
 
-    # TASK: Update the patient's probability of improvement based on their blood pressure
-    if blood_pressure == 'high':
-        p_improve += improve_rate_if_high
-    else:
-        p_improve += improve_rate_if_low
+    # Blood pressure and treatment both shift the probability of improvement.
+    p_improve = IMPROVE_RATE
+    p_improve += IMPROVE_RATE_IF_HIGH if blood_pressure == 'high' else IMPROVE_RATE_IF_LOW
+    p_improve += IMPROVE_RATE_IF_PILL if treatment == 'pill' else IMPROVE_RATE_IF_NO_PILL
 
-    # TASK: Update the patient's probability of improvement based on the treatment
-    if intervention == 'pill':
-        p_improve += improve_rate_if_pill
-    else:
-        p_improve += improve_rate_if_no_pill
-
-    # Determine whether the patient improved
-    if random.uniform(0, 1) < p_improve:
-        improved = 'yes'
-    else:
-        improved = 'no'
-
-    return (blood_pressure, intervention, improved)
+    improved = rng.random() < p_improve
+    return blood_pressure, treatment, improved
 
 
-# Run the simulation and record the results
-patients = 10000
-results = [simulate_beta_blockers() for i in range(patients)]
+def rate(improved, total):
+    return improved / total if total else None
 
-# Summarize the results
+
+def format_cell(improved, total):
+    if total == 0:
+        return 'n/a'
+    return f"{improved / total:.1%} (n={total:,})"
+
+
 def summarize_results(results):
-    group_x_a = 0
-    group_x_b = 0
-    group_x_a_total = 0
-    group_x_b_total = 0
+    """Prints the improvement rate by treatment, within each blood pressure group and for all patients."""
+    groups = [
+        ('High BP', 'high'),
+        ('Low BP', 'low'),
+        ('All patients', None),
+    ]
+    print(f"{'':<14}{'Pill':<22}{'No pill':<22}Better")
 
-    group_y_a = 0
-    group_y_b = 0
-    group_y_a_total = 0
-    group_y_b_total = 0
+    better_in = {}
+    for label, blood_pressure in groups:
+        cells = {}
+        for treatment in ('pill', 'no_pill'):
+            outcomes = [improved for bp, t, improved in results
+                        if t == treatment and blood_pressure in (None, bp)]
+            cells[treatment] = (sum(outcomes), len(outcomes))
 
-    for blood_pressure, intervention, improved in results:
-        if blood_pressure == 'high':
-            group_x_a_total += 1
-            if improved == 'yes':
-                group_x_a += 1
+        pill_rate = rate(*cells['pill'])
+        no_pill_rate = rate(*cells['no_pill'])
+        if pill_rate is None or no_pill_rate is None:
+            better_in[label] = 'n/a'
         else:
-            group_y_a_total += 1
-            if improved == 'yes':
-                group_y_a += 1
+            better_in[label] = 'pill' if pill_rate > no_pill_rate else 'no pill'
+        print(f"{label:<14}{format_cell(*cells['pill']):<22}"
+              f"{format_cell(*cells['no_pill']):<22}{better_in[label]}")
 
-        if intervention == 'pill':
-            group_x_b_total += 1
-            if improved == 'yes':
-                group_x_b += 1
-        else:
-            group_y_b_total += 1
-            if improved == 'yes':
-                group_y_b += 1
+    within = {better_in['High BP'], better_in['Low BP']}
+    overall = better_in['All patients']
+    if len(within) == 1 and 'n/a' not in within | {overall} and overall not in within:
+        within_word = 'higher' if within == {'pill'} else 'lower'
+        overall_word = 'lower' if within_word == 'higher' else 'higher'
+        print(f"\nThe pill has the {within_word} rate within each blood pressure group, "
+              f"but the {overall_word} rate for all patients.")
+        print("Blood pressure sits between the pill and the outcome, so the all-patient "
+              "row is the total effect of the pill.")
 
-    print(f"GROUP X - Treatment A (no pill): {group_x_a}/{group_x_a_total} improved")
-    print(f"GROUP Y - Treatment A (no pill): {group_y_a}/{group_y_a_total} improved")
-    print(f"GROUP X - Treatment B (pill): {group_x_b}/{group_x_b_total} improved")
-    print(f"GROUP Y - Treatment B (pill): {group_y_b}/{group_y_b_total} improved")
 
-summarize_results(results)
+def main():
+    parser = argparse.ArgumentParser(description='Beta-blocker simulation: blood pressure as a mediator')
+    parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
+    parser.add_argument('--patients', type=int, default=10000, help='number of simulated patients (default: 10000)')
+    args = parser.parse_args()
+
+    rng = random.Random(args.seed)
+    results = [simulate_beta_blockers(rng) for _ in range(args.patients)]
+
+    print(f"Improvement rate by treatment ({args.patients:,} patients, seed {args.seed})\n")
+    summarize_results(results)
+
+
+if __name__ == '__main__':
+    main()
