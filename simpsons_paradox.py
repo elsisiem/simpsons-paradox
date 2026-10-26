@@ -1,110 +1,110 @@
-def simulate_kidney_stone():
-    import random
+"""Simpson's paradox with kidney stone treatments, by Monte Carlo simulation.
 
-    # 40% of patients present with large kidney stones (60% with small)
-    p_large = 0.4
+Surgery beats medication within every stone size, yet medication beats surgery
+overall, because surgery is given mostly to patients with large stones, who
+improve less often whatever the treatment.
 
-    # 80% of large kidney stone patients are assigned to surgery (20% to medication)
-    p_surgery_if_large = 0.8
+Usage: python simpsons_paradox.py [--seed 42] [--patients 10000]
+"""
+import argparse
+import random
 
-    # 10% of small kidney stone patients are assigned to surgery (90% to medication)
-    p_surgery_if_small = 0.1
+# 40% of patients present with large kidney stones (60% with small)
+P_LARGE = 0.4
 
-    # At baseline, 30% of patients improve
-    improve_rate = 0.3
+# 80% of large-stone patients are assigned to surgery (20% to medication)
+P_SURGERY_IF_LARGE = 0.8
 
-    # Absolute 20% fewer patients improve if the stone is large
-    improve_rate_if_large = -0.2
+# 10% of small-stone patients are assigned to surgery (90% to medication)
+P_SURGERY_IF_SMALL = 0.1
 
-    # Absolute 20% more patients improve if the stone is small
-    improve_rate_if_small = 0.2
+# At baseline, 30% of patients improve
+IMPROVE_RATE = 0.3
 
-    # Absolute 40% more patients improve with surgery
-    improve_rate_if_surgery = 0.4
+# Absolute 20% fewer patients improve if the stone is large
+IMPROVE_RATE_IF_LARGE = -0.2
 
-    # Absolute 20% more patients improve with medication
-    improve_rate_if_medication = 0.2
+# Absolute 20% more patients improve if the stone is small
+IMPROVE_RATE_IF_SMALL = 0.2
 
-    # This is the baseline improvement probability. It will go up or down below.
-    p_improve = improve_rate
+# Absolute 40% more patients improve with surgery
+IMPROVE_RATE_IF_SURGERY = 0.4
 
-    # TASK: Simulate whether it is a large or a small stone
-    if random.uniform(0, 1) < p_large:
+# Absolute 20% more patients improve with medication
+IMPROVE_RATE_IF_MEDICATION = 0.2
+
+
+def simulate_kidney_stone(rng):
+    """Simulates one patient. Returns (stone_size, treatment, improved)."""
+    # Stone size comes first, and it decides which treatment the patient gets.
+    if rng.random() < P_LARGE:
         stone_size = 'large'
-        # TASK: Simulate which treatment the patient gets
-        if random.uniform(0, 1) < p_surgery_if_large:
-            intervention = 'surgery'
-        else:
-            intervention = 'medication'
+        p_surgery = P_SURGERY_IF_LARGE
     else:
         stone_size = 'small'
-        # TASK: Simulate which treatment the patient gets
-        if random.uniform(0, 1) < p_surgery_if_small:
-            intervention = 'surgery'
-        else:
-            intervention = 'medication'
+        p_surgery = P_SURGERY_IF_SMALL
+    treatment = 'surgery' if rng.random() < p_surgery else 'medication'
 
-    # TASK: Update the patient's probability of improvement based on the size
-    # of the kidney stone
-    if stone_size == 'large':
-        p_improve += improve_rate_if_large
-    else:
-        p_improve += improve_rate_if_small
+    # Stone size and treatment both shift the probability of improvement.
+    p_improve = IMPROVE_RATE
+    p_improve += IMPROVE_RATE_IF_LARGE if stone_size == 'large' else IMPROVE_RATE_IF_SMALL
+    p_improve += IMPROVE_RATE_IF_SURGERY if treatment == 'surgery' else IMPROVE_RATE_IF_MEDICATION
 
-    # TASK: Update the patient's probability of improvement based on the type
-    # of treatment they got.
-    if intervention == 'surgery':
-        p_improve += improve_rate_if_surgery
-    else:
-        p_improve += improve_rate_if_medication
-
-    # Determine whether the patient improved
-    if random.uniform(0, 1) < p_improve:
-        improved = 'yes'
-    else:
-        improved = 'no'
-
-    return (stone_size, intervention, improved)
+    improved = rng.random() < p_improve
+    return stone_size, treatment, improved
 
 
-# Run the simulation and record the results
-patients = 10000
-results = [simulate_kidney_stone() for i in range(patients)]
+def rate(improved, total):
+    return improved / total if total else None
 
-# Summarize the results
+
+def format_cell(improved, total):
+    if total == 0:
+        return 'n/a'
+    return f"{improved / total:.1%} (n={total:,})"
+
+
 def summarize_results(results):
-    group_x_a = 0
-    group_x_b = 0
-    group_x_a_total = 0
-    group_x_b_total = 0
+    """Prints the improvement rate by treatment within each stone size and overall."""
+    groups = [('Large stones', 'large'), ('Small stones', 'small'), ('Overall', None)]
+    print(f"{'':<14}{'Surgery':<22}{'Medication':<22}Better")
 
-    group_y_a = 0
-    group_y_b = 0
-    group_y_a_total = 0
-    group_y_b_total = 0
+    better_in = {}
+    for label, size in groups:
+        cells = {}
+        for treatment in ('surgery', 'medication'):
+            outcomes = [improved for s, t, improved in results
+                        if t == treatment and size in (None, s)]
+            cells[treatment] = (sum(outcomes), len(outcomes))
 
-    for stone_size, intervention, improved in results:
-        if stone_size == 'large':
-            group_x_a_total += 1
-            if improved == 'yes':
-                group_x_a += 1
+        surgery_rate = rate(*cells['surgery'])
+        medication_rate = rate(*cells['medication'])
+        if surgery_rate is None or medication_rate is None:
+            better_in[label] = 'n/a'
         else:
-            group_y_a_total += 1
-            if improved == 'yes':
-                group_y_a += 1
+            better_in[label] = 'surgery' if surgery_rate > medication_rate else 'medication'
+        print(f"{label:<14}{format_cell(*cells['surgery']):<22}"
+              f"{format_cell(*cells['medication']):<22}{better_in[label]}")
 
-        if intervention == 'surgery':
-            group_x_b_total += 1
-            if improved == 'yes':
-                group_x_b += 1
-        else:
-            group_y_b_total += 1
-            if improved == 'yes':
-                group_y_b += 1
+    within = {better_in['Large stones'], better_in['Small stones']}
+    overall = better_in['Overall']
+    if len(within) == 1 and 'n/a' not in within | {overall} and overall not in within:
+        print(f"\nSimpson's paradox: {within.pop()} is better within every stone size, "
+              f"but {overall} is better overall.")
 
-    print(f"GROUP X - Treatment A: {group_x_a}/{group_x_a_total} improved")
-    print(f"GROUP Y - Treatment A: {group_y_a}/{group_y_a_total} improved")
-    print(f"GROUP X - Treatment B: {group_x_b}/{group_x_b_total} improved")
-    print(f"GROUP Y - Treatment B: {group_y_b}/{group_y_b_total} improved")
 
-summarize_results(results)
+def main():
+    parser = argparse.ArgumentParser(description="Simpson's paradox: kidney stone simulation")
+    parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
+    parser.add_argument('--patients', type=int, default=10000, help='number of simulated patients (default: 10000)')
+    args = parser.parse_args()
+
+    rng = random.Random(args.seed)
+    results = [simulate_kidney_stone(rng) for _ in range(args.patients)]
+
+    print(f"Improvement rate by treatment ({args.patients:,} patients, seed {args.seed})\n")
+    summarize_results(results)
+
+
+if __name__ == '__main__':
+    main()
